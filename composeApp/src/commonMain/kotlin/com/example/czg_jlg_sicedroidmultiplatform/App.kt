@@ -7,11 +7,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.*
+import androidx.navigation.navArgument
 import com.example.czg_jlg_sicedroidmultiplatform.di.commonAppContainer
 import com.example.czg_jlg_sicedroidmultiplatform.ui.screens.*
 import com.example.czg_jlg_sicedroidmultiplatform.ui.viewmodel.*
-import kotlinx.coroutines.launch
 
 @Composable
 fun App() {
@@ -39,8 +40,11 @@ fun AppNavHost(navController: NavHostController) {
         composable("login") {
             LoginFlow(navController)
         }
-        composable("profile/{matricula}") { backStackEntry ->
-            val matricula = backStackEntry.arguments?.getString("matricula") ?: ""
+        composable(
+            route = "profile/{matricula}",
+            arguments = listOf(navArgument("matricula") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val matricula = backStackEntry.savedStateHandle.get<String>("matricula") ?: ""
             ProfileFlow(matricula, navController)
         }
     }
@@ -100,7 +104,6 @@ fun LoginFlow(navController: NavHostController) {
 @Composable
 fun ProfileFlow(matricula: String, navController: NavHostController) {
     val viewModel: ProfileViewModel = viewModel { commonAppContainer.createProfileViewModel() }
-    val scope = rememberCoroutineScope()
 
     ProfileScreen(
         profileUiState = viewModel.profileUiState,
