@@ -81,9 +81,20 @@ class NetworkSNRepository(
             val response = client.acceso(matricula, contrasenia)
             val result = extractFromXml(response, "accesoLoginResult")
             
-            val isSuccess = result.equals("true", ignoreCase = true) || 
+            var isSuccess = result.equals("true", ignoreCase = true) || 
                             result == "1" || 
                             result.contains("\"acceso\":true", ignoreCase = true)
+
+            // Si falla el primer intento, reintentamos una vez automáticamente.
+            // Algunos servidores de Sicenet requieren que se establezca una sesión (cookies)
+            // que a veces solo se activa correctamente tras el primer contacto.
+            if (!isSuccess) {
+                val retryResponse = client.acceso(matricula, contrasenia)
+                val retryResult = extractFromXml(retryResponse, "accesoLoginResult")
+                isSuccess = retryResult.equals("true", ignoreCase = true) || 
+                            retryResult == "1" || 
+                            retryResult.contains("\"acceso\":true", ignoreCase = true)
+            }
 
             if (isSuccess) {
                 sessionManager.saveMatricula(matricula)

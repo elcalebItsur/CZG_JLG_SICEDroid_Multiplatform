@@ -95,8 +95,6 @@ fun LoginFlow(navController: NavHostController) {
         },
         onResetForm = {
             viewModel.resetState()
-            viewModel.updateMatricula("")
-            viewModel.updateContrasenia("")
         }
     )
 }
