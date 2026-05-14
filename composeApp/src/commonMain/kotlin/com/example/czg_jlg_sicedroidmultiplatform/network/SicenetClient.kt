@@ -10,11 +10,19 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
 import com.example.czg_jlg_sicedroidmultiplatform.data.SessionManager
+import com.example.czg_jlg_sicedroidmultiplatform.getPlatform
 
 class SicenetClient(
     private val sessionManager: SessionManager
 ) {
+    // Detectamos si la plataforma es Web (Wasm o JS) para aplicar el proxy
+    private val isWeb = getPlatform().name.let { 
+        it.contains("Web", true) || it.contains("Wasm", true) || it.contains("JS", true) 
+    }
+
     private val baseUrl = "https://sicenet.itsur.edu.mx"
+    // URL de nuestro propio backend proxy
+    private val webProxyUrl = "http://localhost:3000/soap"
 
     private val client = HttpClient {
         install(ContentNegotiation) {
@@ -26,12 +34,7 @@ class SicenetClient(
         }
         install(Logging) {
             logger = Logger.DEFAULT
-            level = LogLevel.BODY
-        }
-        defaultRequest {
-            url(baseUrl)
-            header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x86) AppleWebKit/537.36")
-            header("Accept", "*/*")
+            level = LogLevel.INFO
         }
     }
 
@@ -41,31 +44,61 @@ class SicenetClient(
     ): String {
         val cookies = sessionManager.getCookies()
         
-        val response = client.post("/ws/wsalumnos.asmx") {
-            header("Content-Type", "text/xml; charset=utf-8")
+        val finalUrl = if (isWeb) webProxyUrl else "$baseUrl/ws/wsalumnos.asmx"
+        
+        val response = client.post(finalUrl) {
+            // ELIMINAR ESPACIOS CRÍTICOS: trim() asegura que no haya nada antes de <?xml
+            setBody(body.trim())
+            
+            header(HttpHeaders.ContentType, "text/xml; charset=utf-8")
             header("SOAPAction", "\"http://tempuri.org/$action\"")
-            if (cookies.isNotEmpty()) {
-                header("Cookie", cookies.joinToString("; "))
+            
+            if (isWeb) {
+                // En Web usamos un header personalizado para que el proxy lo convierta en Cookie
+                if (cookies.isNotEmpty()) {
+                    header("X-Proxy-Cookie", cookies.joinToString("; "))
+                }
+            } else {
+                // En Mobile/Desktop enviamos el header Cookie estándar
+                header(HttpHeaders.UserAgent, "Mozilla/5.0 (Windows NT 10.0; Win64; x86) AppleWebKit/537.36")
+                if (cookies.isNotEmpty()) {
+                    header(HttpHeaders.Cookie, cookies.joinToString("; "))
+                }
             }
-            setBody(body)
         }
 
-        // Capturar cookies del Set-Cookie si existen
-        val setCookieHeaders = response.headers.getAll(HttpHeaders.SetCookie)
-        if (setCookieHeaders != null && setCookieHeaders.isNotEmpty()) {
-            val currentCookies = sessionManager.getCookies().toMutableSet()
-            setCookieHeaders.forEach { header ->
-                val cookie = header.split(";").firstOrNull()
-                if (cookie != null) currentCookies.add(cookie)
+        val responseText = response.bodyAsText()
+        val currentCookies = sessionManager.getCookies().toMutableSet()
+        
+        // 1. Intentar capturar del header estándar Set-Cookie
+        response.headers.getAll(HttpHeaders.SetCookie)?.forEach { header ->
+            header.split(";").firstOrNull()?.let { currentCookies.add(it) }
+        }
+        
+        // 2. Si es Web, el proxy nos envía las cookies en X-Proxy-Set-Cookie
+        if (isWeb) {
+            response.headers["X-Proxy-Set-Cookie"]?.let { proxyCookiesJson ->
+                try {
+                    val cookiesList = Json.decodeFromString<List<String>>(proxyCookiesJson)
+                    cookiesList.forEach { header ->
+                        header.split(";").firstOrNull()?.let { currentCookies.add(it) }
+                    }
+                } catch (e: Exception) {
+                    println("Error parsing proxy cookies: ${e.message}")
+                }
             }
+        }
+        
+        if (currentCookies.size > sessionManager.getCookies().size) {
             sessionManager.saveCookies(currentCookies)
         }
 
-        return response.bodyAsText()
+        return responseText
     }
 
     suspend fun acceso(matricula: String, contrasenia: String): String {
-        val body = bodyacceso.format(escapeXml(matricula.uppercase()), escapeXml(contrasenia))
+        // XML en una sola línea para evitar errores de parseo en el servidor ASP.NET
+        val body = """<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><accesoLogin xmlns="http://tempuri.org/"><strMatricula>${escapeXml(matricula.uppercase())}</strMatricula><strContrasenia>${escapeXml(contrasenia)}</strContrasenia><tipoUsuario>ALUMNO</tipoUsuario></accesoLogin></soap:Body></soap:Envelope>"""
         return soapRequest("accesoLogin", body)
     }
 
@@ -98,66 +131,13 @@ class SicenetClient(
     }
 
     companion object {
-        private val bodyacceso = """
-            <?xml version="1.0" encoding="utf-8"?>
-            <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-              <soap:Body>
-                <accesoLogin xmlns="http://tempuri.org/">
-                  <strMatricula>%s</strMatricula>
-                  <strContrasenia>%s</strContrasenia>   
-                  <tipoUsuario>ALUMNO</tipoUsuario>
-                </accesoLogin>
-              </soap:Body>
-            </soap:Envelope>
-        """.trimIndent()
+        private const val SOAP_START = "<?xml version=\"1.0\" encoding=\"utf-8\"?><soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body>"
+        private const val SOAP_END = "</soap:Body></soap:Envelope>"
 
-        private val bodyperfil = """
-            <?xml version="1.0" encoding="utf-8"?>
-            <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-              <soap:Body>
-                <getAlumnoAcademicoWithLineamiento xmlns="http://tempuri.org/" />
-              </soap:Body>
-            </soap:Envelope>
-        """.trimIndent()
-
-        private val bodyCarga = """
-            <?xml version="1.0" encoding="utf-8"?>
-            <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-              <soap:Body>
-                <getCargaAcademicaByAlumno xmlns="http://tempuri.org/" />
-              </soap:Body>
-            </soap:Envelope>
-        """.trimIndent()
-
-        private val bodyKardex = """
-            <?xml version="1.0" encoding="utf-8"?>
-            <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-              <soap:Body>
-                <getAllKardexConPromedioByAlumno xmlns="http://tempuri.org/">
-                  <aluLineamiento>1</aluLineamiento>
-                </getAllKardexConPromedioByAlumno>
-              </soap:Body>
-            </soap:Envelope>
-        """.trimIndent()
-
-        private val bodyUnidades = """
-            <?xml version="1.0" encoding="utf-8"?>
-            <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-              <soap:Body>
-                <getCalifUnidadesByAlumno xmlns="http://tempuri.org/" />
-              </soap:Body>
-            </soap:Envelope>
-        """.trimIndent()
-
-        private val bodyFinal = """
-            <?xml version="1.0" encoding="utf-8"?>
-            <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-              <soap:Body>
-                <getAllCalifFinalByAlumnos xmlns="http://tempuri.org/">
-                  <bytModEducativo>1</bytModEducativo>
-                </getAllCalifFinalByAlumnos>
-              </soap:Body>
-            </soap:Envelope>
-        """.trimIndent()
+        private val bodyperfil = "${SOAP_START}<getAlumnoAcademicoWithLineamiento xmlns=\"http://tempuri.org/\" />${SOAP_END}"
+        private val bodyCarga = "${SOAP_START}<getCargaAcademicaByAlumno xmlns=\"http://tempuri.org/\" />${SOAP_END}"
+        private val bodyKardex = "${SOAP_START}<getAllKardexConPromedioByAlumno xmlns=\"http://tempuri.org/\"><aluLineamiento>1</aluLineamiento></getAllKardexConPromedioByAlumno>${SOAP_END}"
+        private val bodyUnidades = "${SOAP_START}<getCalifUnidadesByAlumno xmlns=\"http://tempuri.org/\" />${SOAP_END}"
+        private val bodyFinal = "${SOAP_START}<getAllCalifFinalByAlumnos xmlns=\"http://tempuri.org/\"><bytModEducativo>1</bytModEducativo></getAllCalifFinalByAlumnos>${SOAP_END}"
     }
 }
