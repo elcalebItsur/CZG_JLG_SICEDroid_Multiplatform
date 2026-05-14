@@ -7,6 +7,7 @@ import com.example.czg_jlg_sicedroidmultiplatform.network.SicenetClient
 import com.example.czg_jlg_sicedroidmultiplatform.ui.viewmodel.LoginViewModel
 import com.example.czg_jlg_sicedroidmultiplatform.ui.viewmodel.ProfileViewModel
 import com.example.czg_jlg_sicedroidmultiplatform.ui.viewmodel.StartupViewModel
+import com.example.czg_jlg_sicedroidmultiplatform.ui.viewmodel.AcademicViewModel
 
 class AppContainer {
     
@@ -26,6 +27,7 @@ class AppContainer {
     fun createLoginViewModel() = LoginViewModel(snRepository)
     fun createProfileViewModel() = ProfileViewModel(snRepository)
     fun createStartupViewModel() = StartupViewModel(snRepository)
+    fun createAcademicViewModel() = AcademicViewModel(snRepository)
 }
 
 // Global instance or provide via CompositionLocal
