@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -28,7 +29,7 @@ private val LightBackground = Color(0xFFF5F5F5)
 @Composable
 fun ProfileScreen(
     profileUiState: ProfileUiState,
-    onLogoutClick: () -> Unit,
+    onMenuClick: () -> Unit,
     onLoadProfile: (String) -> Unit,
     matricula: String,
     modifier: Modifier = Modifier
@@ -44,7 +45,7 @@ fun ProfileScreen(
         is ProfileUiState.Success -> {
             ProfileDetailScreen(
                 profile = profileUiState.profile,
-                onLogoutClick = onLogoutClick,
+                onMenuClick = onMenuClick,
                 modifier = modifier
             )
         }
@@ -76,7 +77,7 @@ private fun LoadingScreen(modifier: Modifier = Modifier) {
 @Composable
 private fun ProfileDetailScreen(
     profile: ProfileStudent,
-    onLogoutClick: () -> Unit,
+    onMenuClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Scaffold(
@@ -84,8 +85,8 @@ private fun ProfileDetailScreen(
             TopAppBar(
                 title = { Text("Mi Perfil", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White) },
                 navigationIcon = {
-                    IconButton(onClick = onLogoutClick) {
-                        Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Cerrar Sesión", tint = Color.White)
+                    IconButton(onClick = onMenuClick) {
+                        Icon(Icons.Default.Menu, contentDescription = "Abrir Menú", tint = Color.White)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBlue)

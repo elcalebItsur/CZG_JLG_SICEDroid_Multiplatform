@@ -267,7 +267,7 @@ fun ProfileFlow(matricula: String, navController: NavHostController, onMenuClick
 
     ProfileScreen(
         profileUiState = viewModel.profileUiState,
-        onLogoutClick = onMenuClick,
+        onMenuClick = onMenuClick,
         onLoadProfile = { viewModel.loadProfile(it) },
         matricula = matricula
     )
